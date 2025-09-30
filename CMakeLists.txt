@@ -10,7 +10,18 @@ endif()
 
 include(FetchContent)
 
-find_package(Boost 1.70 CONFIG QUIET COMPONENTS system)
+find_package(nlohmann_json 3.11.0)
+if(NOT nlohmann_json_FOUND)
+    message(STATUS "nlohmann/json not found locally, fetching from source.")
+    FetchContent_Declare(
+        json
+        URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+        URL_HASH SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d
+    )
+    FetchContent_MakeAvailable(json)
+endif()
+
+find_package(Boost 1.70)
 if(NOT Boost_FOUND)
     message(STATUS "Boost not found locally, fetching from source.")
     FetchContent_Declare(
@@ -38,6 +49,10 @@ set(SOURCES
 
 add_executable(orderbook ${SOURCES})
 
+target_link_libraries(orderbook
+    nlohmann_json::nlohmann_json
+)
+
 if(BOOST_FETCHED)
     target_link_libraries(orderbook
         Boost::system
@@ -47,7 +62,7 @@ if(BOOST_FETCHED)
     )
 else()
     target_link_libraries(orderbook
-        ${Boost_LIBRARIES}
+        Boost::boost
         ${CMAKE_THREAD_LIBS_INIT}
         ${OPENSSL_LIBRARIES}
     )

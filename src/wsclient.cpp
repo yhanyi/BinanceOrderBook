@@ -8,12 +8,14 @@
 #include <boost/beast/websocket.hpp>
 #include <boost/beast/websocket/ssl.hpp>
 #include <iostream>
+#include <nlohmann/json.hpp>
 
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
 namespace net = boost::asio;
 namespace ssl = net::ssl;
 using tcp = net::ip::tcp;
+using json = nlohmann::json;
 
 WebSocketClient::WebSocketClient(const std::string &symbol)
     : symbol_(symbol), host_("stream.binance.com"), port_("9443"),
@@ -109,71 +111,36 @@ void WebSocketClient::runImpl() {
 DepthUpdate WebSocketClient::parseUpdate(const std::string &message) {
   DepthUpdate update;
 
-  auto extractValue = [&](const std::string &key) -> std::string {
-    std::string search = "\"" + key + "\":";
-    size_t pos = message.find(search);
-    if (pos == std::string::npos)
-      return "";
+  // Parse JSON message.
+  json data = json::parse(message);
 
-    pos += search.length();
-    size_t end = message.find_first_of(",}", pos);
-    return message.substr(pos, end - pos);
-  };
+  if (!data.contains("U") || !data.contains("u") || !data.contains("b") ||
+      !data.contains("a")) {
+    throw std::runtime_error("Missing required fields in depth update");
+  }
 
-  auto extractArray = [&](const std::string &key) -> std::vector<PriceLevel> {
-    std::vector<PriceLevel> levels;
-    std::string search = "\"" + key + "\":[";
-    size_t pos = message.find(search);
-    if (pos == std::string::npos)
-      return levels;
+  update.firstUpdateId = data["U"].get<uint64_t>();
+  update.finalUpdateId = data["u"].get<uint64_t>();
 
-    pos += search.length();
-
-    int bracket_count = 1;
-    size_t end = pos;
-    while (end < message.length() && bracket_count > 0) {
-      if (message[end] == '[')
-        bracket_count++;
-      else if (message[end] == ']')
-        bracket_count--;
-      end++;
+  // Parse bids.
+  for (const auto &bid : data["b"]) {
+    if (bid.is_array() && bid.size() >= 2) {
+      PriceLevel level;
+      level.price = bid[0].get<std::string>();
+      level.quantity = bid[1].get<std::string>();
+      update.bids.push_back(level);
     }
-    end--;
+  }
 
-    std::string array_str = message.substr(pos, end - pos);
-
-    size_t i = 0;
-    while (i < array_str.length()) {
-      if (array_str[i] == '[') {
-        i++;
-        size_t q1 = array_str.find('"', i);
-        if (q1 == std::string::npos)
-          break;
-        size_t q2 = array_str.find('"', q1 + 1);
-        if (q2 == std::string::npos)
-          break;
-        std::string price = array_str.substr(q1 + 1, q2 - q1 - 1);
-        size_t q3 = array_str.find('"', q2 + 1);
-        if (q3 == std::string::npos)
-          break;
-        size_t q4 = array_str.find('"', q3 + 1);
-        if (q4 == std::string::npos)
-          break;
-        std::string qty = array_str.substr(q3 + 1, q4 - q3 - 1);
-        levels.push_back({price, qty});
-        i = array_str.find(']', q4) + 1;
-      } else {
-        i++;
-      }
+  // Parse asks.
+  for (const auto &ask : data["a"]) {
+    if (ask.is_array() && ask.size() >= 2) {
+      PriceLevel level;
+      level.price = ask[0].get<std::string>();
+      level.quantity = ask[1].get<std::string>();
+      update.asks.push_back(level);
     }
-
-    return levels;
-  };
-
-  update.firstUpdateId = std::stoull(extractValue("U"));
-  update.finalUpdateId = std::stoull(extractValue("u"));
-  update.bids = extractArray("b");
-  update.asks = extractArray("a");
+  }
 
   return update;
 }

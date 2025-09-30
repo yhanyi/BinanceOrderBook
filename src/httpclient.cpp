@@ -7,12 +7,14 @@
 #include <boost/beast/ssl.hpp>
 #include <boost/beast/version.hpp>
 #include <iostream>
+#include <nlohmann/json.hpp>
 
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace net = boost::asio;
 namespace ssl = net::ssl;
 using tcp = net::ip::tcp;
+using json = nlohmann::json;
 
 HttpClient::HttpClient() : host_("api.binance.com"), port_("443") {}
 
@@ -75,117 +77,46 @@ HttpClient::getSnapshot(const std::string &symbol) {
       return response;
     }
 
-    std::cout << "Parsing response body (length: " << res.body().length()
-              << ")..." << std::endl;
+    // Parse JSON response.
+    json data = json::parse(res.body());
 
-    // Parse JSON.
-    std::string body = res.body();
-
-    std::cout << "Extracting lastUpdateId." << std::endl;
-
-    size_t pos = body.find("\"lastUpdateId\":");
-    if (pos != std::string::npos) {
-      pos += 15;
-      size_t end = body.find_first_of(",}", pos);
-      response.lastUpdateId = std::stoull(body.substr(pos, end - pos));
-      std::cout << "lastUpdateId: " << response.lastUpdateId << std::endl;
-    } else {
-      std::cerr << "Could not find lastUpdateId in response" << std::endl;
+    if (!data.contains("lastUpdateId") || !data.contains("bids") ||
+        !data.contains("asks")) {
+      std::cerr << "Missing required fields in snapshot response" << std::endl;
       return response;
     }
 
-    // Extract bids.
-    std::cout << "Extracting bids." << std::endl;
-    pos = body.find("\"bids\":[");
-    if (pos != std::string::npos) {
-      pos += 8;
-      size_t end = body.find("]", pos);
-      std::string bids_str = body.substr(pos, end - pos);
-      size_t i = 0;
-      int count = 0;
-      while (i < bids_str.length() && count < 5000) {
-        if (bids_str[i] == '[') {
-          i++;
-          size_t quote1 = bids_str.find('"', i);
-          if (quote1 == std::string::npos)
-            break;
-          size_t quote2 = bids_str.find('"', quote1 + 1);
-          if (quote2 == std::string::npos)
-            break;
-          std::string price = bids_str.substr(quote1 + 1, quote2 - quote1 - 1);
-          size_t quote3 = bids_str.find('"', quote2 + 1);
-          if (quote3 == std::string::npos)
-            break;
-          size_t quote4 = bids_str.find('"', quote3 + 1);
-          if (quote4 == std::string::npos)
-            break;
-          std::string qty = bids_str.substr(quote3 + 1, quote4 - quote3 - 1);
-          response.bids.push_back({price, qty});
-          i = bids_str.find(']', quote4) + 1;
-          count++;
-        } else {
-          i++;
-        }
+    response.lastUpdateId = data["lastUpdateId"].get<uint64_t>();
+
+    // Parse bids.
+    for (const auto &bid : data["bids"]) {
+      if (bid.is_array() && bid.size() >= 2) {
+        PriceLevel level;
+        level.price = bid[0].get<std::string>();
+        level.quantity = bid[1].get<std::string>();
+        response.bids.push_back(level);
       }
-      std::cout << "Parsed " << response.bids.size() << " bids." << std::endl;
-    } else {
-      std::cerr << "Could not find bids in response." << std::endl;
-      return response;
     }
 
-    // Extract asks.
-    std::cout << "Extracting asks." << std::endl;
-    pos = body.find("\"asks\":[");
-    if (pos != std::string::npos) {
-      pos += 8;
-      int bracket_count = 1;
-      size_t end = pos;
-      while (end < body.length() && bracket_count > 0) {
-        if (body[end] == '[')
-          bracket_count++;
-        else if (body[end] == ']')
-          bracket_count--;
-        end++;
+    // Parse asks.
+    for (const auto &ask : data["asks"]) {
+      if (ask.is_array() && ask.size() >= 2) {
+        PriceLevel level;
+        level.price = ask[0].get<std::string>();
+        level.quantity = ask[1].get<std::string>();
+        response.asks.push_back(level);
       }
-      end--;
-      std::string asks_str = body.substr(pos, end - pos);
-      size_t i = 0;
-      int count = 0;
-      while (i < asks_str.length() && count < 5000) {
-        if (asks_str[i] == '[') {
-          i++;
-          size_t quote1 = asks_str.find('"', i);
-          if (quote1 == std::string::npos)
-            break;
-          size_t quote2 = asks_str.find('"', quote1 + 1);
-          if (quote2 == std::string::npos)
-            break;
-          std::string price = asks_str.substr(quote1 + 1, quote2 - quote1 - 1);
-          size_t quote3 = asks_str.find('"', quote2 + 1);
-          if (quote3 == std::string::npos)
-            break;
-          size_t quote4 = asks_str.find('"', quote3 + 1);
-          if (quote4 == std::string::npos)
-            break;
-          std::string qty = asks_str.substr(quote3 + 1, quote4 - quote3 - 1);
-          response.asks.push_back({price, qty});
-          i = asks_str.find(']', quote4) + 1;
-          count++;
-        } else {
-          i++;
-        }
-      }
-      std::cout << "Parsed " << response.asks.size() << " asks." << std::endl;
     }
 
     response.success = true;
-    std::cout << "Snapshot received: " << response.bids.size() << " bids, "
-              << response.asks.size() << " asks, "
-              << "lastUpdateId=" << response.lastUpdateId << std::endl;
+    std::cout << "Fetched snapshot: " << response.bids.size() << " bids, "
+              << response.asks.size()
+              << " asks, lastUpdateId=" << response.lastUpdateId << std::endl;
 
-  } catch (std::exception const &e) {
-    std::cerr << "HTTP Error: " << e.what() << std::endl;
+  } catch (const json::exception &e) {
+    std::cerr << "JSON parse error: " << e.what() << std::endl;
+  } catch (const std::exception &e) {
+    std::cerr << "HTTP error: " << e.what() << std::endl;
   }
-
   return response;
 }
