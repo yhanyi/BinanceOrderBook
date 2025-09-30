@@ -11,6 +11,11 @@ struct PriceLevel {
   std::string quantity;
 };
 
+struct DepthUpdate {
+  uint64_t firstUpdateId, finalUpdateId;
+  std::vector<PriceLevel> bids, asks;
+};
+
 // Descending sort for bids.
 struct BidComparator {
   bool operator()(const std::string &a, const std::string &b) const {
@@ -30,6 +35,7 @@ public:
   OrderBook();
   void setSnapshot(const std::vector<PriceLevel> &bids,
                    const std::vector<PriceLevel> &asks, uint64_t lastUpdateId);
+  bool update(const DepthUpdate &update);
   void display() const;
   uint64_t getLastUpdateId() const;
 

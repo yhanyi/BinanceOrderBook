@@ -25,6 +25,41 @@ void OrderBook::setSnapshot(const std::vector<PriceLevel> &bids,
   lastUpdateId_ = lastUpdateId;
 }
 
+bool OrderBook::update(const DepthUpdate &update) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  // Ignore old events.
+  if (update.finalUpdateId <= lastUpdateId_) {
+    return true;
+  }
+  // Check for gap.
+  if (update.firstUpdateId > lastUpdateId_ + 1) {
+    std::cerr << "Gap detected, expected update after" << lastUpdateId_
+              << " but got " << update.firstUpdateId << std::endl;
+    return false;
+  }
+
+  // Apply bid updates.
+  for (const auto &level : update.bids) {
+    if (level.quantity == "0" || level.quantity == "0.00000000") {
+      bids_.erase(level.price);
+    } else {
+      bids_[level.price] = level.quantity;
+    }
+  }
+
+  // Apply ask updates.
+  for (const auto &level : update.asks) {
+    if (level.quantity == "0" || level.quantity == "0.00000000") {
+      asks_.erase(level.price);
+    } else {
+      asks_[level.price] = level.quantity;
+    }
+  }
+
+  lastUpdateId_ = update.finalUpdateId;
+  return true;
+}
+
 // Console display. Maybe can use QT or threadsafe logger?
 void OrderBook::display() const {
   std::lock_guard<std::mutex> lock(mutex_);
