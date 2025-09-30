@@ -45,10 +45,4 @@ private:
   uint64_t lastUpdateId_;
   // Mutable allows for access through a const object / member function.
   mutable std::mutex mutex_;
-  void
-  updatePriceLevels(std::map<std::string, std::string, BidComparator> &book,
-                    const std::vector<PriceLevel> &levels);
-  void
-  updatePriceLevels(std::map<std::string, std::string, AskComparator> &book,
-                    const std::vector<PriceLevel> &levels);
 };
