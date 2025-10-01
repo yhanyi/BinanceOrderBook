@@ -78,8 +78,7 @@ public:
 
     // Loop to periodically redisplay order book.
     while (true) {
-      std::this_thread::sleep_for(std::chrono::seconds(2));
-      orderBook_.display();
+      std::this_thread::sleep_for(std::chrono::seconds(60));
     }
   }
 
@@ -98,19 +97,13 @@ private:
 
     if (!snapshotReceived_) {
       updateBuffer_.push(update);
-      if (updateBuffer_.size() == 1) {
-        std::cout << "First buffered update: U=" << update.firstUpdateId
-                  << ", u=" << update.finalUpdateId << std::endl;
-      }
-      if (updateBuffer_.size() % 50 == 0) {
-        std::cout << "Buffered " << updateBuffer_.size() << " updates..."
-                  << std::endl;
-      }
     } else {
-      // Apply update after snapshot.
-      if (!orderBook_.update(update)) {
-        std::cerr << "Failed to apply update U=" << update.firstUpdateId
-                  << ", u=" << update.finalUpdateId << std::endl;
+      // Apply update after snapshot and display immediately.
+      if (orderBook_.update(update)) {
+        orderBook_.display();
+      } else {
+        std::cerr << "Failed to apply update [" << update.firstUpdateId << ", "
+                  << update.finalUpdateId << "]" << std::endl;
       }
     }
   }

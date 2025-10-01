@@ -63,7 +63,7 @@ bool OrderBook::update(const DepthUpdate &update) {
 // Console display. Maybe can use QT or threadsafe logger?
 void OrderBook::display() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  std::cout << "Order Book (Top 5)" << std::endl;
+  std::cout << "=== ORDER BOOK ===" << std::endl;
   std::cout << std::fixed << std::setprecision(8);
 
   // Display asks.

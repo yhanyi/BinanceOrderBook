@@ -74,15 +74,9 @@ void WebSocketClient::runImpl() {
     std::cout << "Connected! Waiting for messages." << std::endl;
 
     beast::flat_buffer buffer;
-    int msg_count = 0;
 
     while (running_) {
       ws.read(buffer);
-
-      msg_count++;
-      if (msg_count <= 5 || msg_count % 100 == 0) {
-        std::cout << "Msg #" << msg_count << std::endl;
-      }
 
       std::string message = beast::buffers_to_string(buffer.data());
       buffer.consume(buffer.size());
@@ -92,11 +86,7 @@ void WebSocketClient::runImpl() {
           DepthUpdate update = parseUpdate(message);
           callback_(update);
         } catch (const std::exception &e) {
-          if (msg_count == 1) {
-            std::cerr << "Parse error: " << e.what() << std::endl;
-            std::cerr << "First message: " << message.substr(0, 200)
-                      << std::endl;
-          }
+          std::cerr << "Parse error: " << e.what() << std::endl;
         }
       }
     }
@@ -116,7 +106,7 @@ DepthUpdate WebSocketClient::parseUpdate(const std::string &message) {
 
   if (!data.contains("U") || !data.contains("u") || !data.contains("b") ||
       !data.contains("a")) {
-    throw std::runtime_error("Missing required fields in depth update");
+    throw std::runtime_error("Missing required fields in depth update.");
   }
 
   update.firstUpdateId = data["U"].get<uint64_t>();
